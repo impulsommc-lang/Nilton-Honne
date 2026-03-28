@@ -5,18 +5,51 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Cormorant Garamond", serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  /* Color tokens */
+  --color-primary: #F27D26;
+  --color-dark: #1A1A1A;
+  --color-light: #F8F9FA;
+  --color-gold: #FFD700;
 }
 
 @layer base {
+  * {
+    @apply transition-colors duration-200;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
   body {
     @apply bg-[#F8F9FA] text-[#1A1A1A] font-sans;
   }
+  
+  input, textarea {
+    @apply antialiased;
+  }
 }
 
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .gradient-brand {
+    @apply from-[#F27D26] to-[#E86E1A];
+  }
+  
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-[#F27D26] focus:ring-offset-2;
+  }
+  
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lg hover:-translate-y-1;
+  }
 }

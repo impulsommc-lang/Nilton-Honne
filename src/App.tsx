@@ -1,36 +1,22 @@
 import React, { useState, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { 
-  Camera, 
-  Upload, 
-  Sparkles, 
-  Phone, 
-  MapPin, 
-  Bed, 
-  Bath, 
-  Car, 
-  Download,
-  Loader2,
-  Image as ImageIcon,
-  X,
-  Brush,
-  MessageSquare,
-  RotateCcw,
-  Check,
-  AlertCircle,
-  Eraser
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
+import {
+  Header,
+  PropertyGallery,
+  PreviewPanel,
+  DetailsForm,
+  CustomInstructions,
+  StrategicInsight,
+  ReferenceImages,
+  LogoUpload,
+  RefinementPanel,
+  type PropertyImage,
+  type PropertyDetails
+} from './components';
 
 // Initialize Gemini API
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-
-interface PropertyImage {
-  id: string;
-  label: string;
-  file: File | null;
-  preview: string | null;
-}
 
 const INITIAL_IMAGES: PropertyImage[] = [
   { id: 'exterior', label: 'Fachada Exterior', file: null, preview: null },
@@ -40,26 +26,25 @@ const INITIAL_IMAGES: PropertyImage[] = [
   { id: 'dormitorio', label: 'Dormitorio', file: null, preview: null },
 ];
 
+const STRATEGIC_SUGGESTIONS: Record<string, string> = {
+  collage: "Especialista en Collages: Ideal para mostrar múltiples ambientes en un solo impacto visual de alta conversión.",
+  luxury: "Impacto Visual Único: Perfecto para destacar una sola foto de gran calidad con un diseño minimalista y premium.",
+  functionality: "Infografía Inmobiliaria: Organiza datos técnicos (m2, dormitorios, baños) de forma clara y profesional.",
+  lifestyle: "Conexión Emocional: Vende la experiencia y el bienestar de habitar el espacio con un look editorial.",
+  roi: "Oportunidad de Inversión: Diseño directo y agresivo para captar inversores con indicadores de rentabilidad."
+};
+
 export default function App() {
+  // State Management
   const [images, setImages] = useState<PropertyImage[]>(INITIAL_IMAGES);
   const [referenceImages, setReferenceImages] = useState<PropertyImage[]>([]);
   const [logo, setLogo] = useState<{ file: File | null, preview: string | null }>({ file: null, preview: null });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAd, setGeneratedAd] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const logoInputRef = useRef<HTMLInputElement>(null);
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
   const [selectedStyle, setSelectedStyle] = useState<'collage' | 'luxury' | 'functionality' | 'lifestyle' | 'roi'>('collage');
 
-  const STRATEGIC_SUGGESTIONS = {
-    collage: "Especialista en Collages: Ideal para mostrar múltiples ambientes en un solo impacto visual de alta conversión.",
-    luxury: "Impacto Visual Único: Perfecto para destacar una sola foto de gran calidad con un diseño minimalista y premium.",
-    functionality: "Infografía Inmobiliaria: Organiza datos técnicos (m2, dormitorios, baños) de forma clara y profesional.",
-    lifestyle: "Conexión Emocional: Vende la experiencia y el bienestar de habitar el espacio con un look editorial.",
-    roi: "Oportunidad de Inversión: Diseño directo y agresivo para captar inversores con indicadores de rentabilidad."
-  };
-  
   // Iteration & Editing State
   const [isEditing, setIsEditing] = useState(false);
   const [refinementText, setRefinementText] = useState('');
@@ -67,13 +52,11 @@ export default function App() {
   const [brushSize, setBrushSize] = useState(40);
   const [history, setHistory] = useState<{ prompt: string; image: string }[]>([]);
   const [qualityWarning, setQualityWarning] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const contextRef = useRef<CanvasRenderingContext2D | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // Editable fields state
+  // Details State
   const [customInstructions, setCustomInstructions] = useState('');
-  const [details, setDetails] = useState({
+  const [details, setDetails] = useState<PropertyDetails>({
     location: 'Valle Hermoso 334',
     price: '180,000',
     beds: '3',
@@ -84,12 +67,23 @@ export default function App() {
     urgency: '',
     nearbyStreets: '',
     cta: '¡Contáctanos hoy!',
-    buyerProfile: 'family' as 'family' | 'investor'
+    buyerProfile: 'family'
   });
 
+  // Refs
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const contextRef = useRef<CanvasRenderingContext2D | null>(null);
+
+  // Handlers
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setDetails(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleBuyerProfileChange = (profile: 'family' | 'investor') => {
+    setDetails(prev => ({ ...prev, buyerProfile: profile }));
   };
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,6 +126,10 @@ export default function App() {
   const triggerUpload = (id: string) => {
     setActiveSlot(id);
     fileInputRef.current?.click();
+  };
+
+  const triggerLogoUpload = () => {
+    logoInputRef.current?.click();
   };
 
   const removeImage = (id: string) => {
@@ -216,6 +214,7 @@ export default function App() {
     setQualityWarning(warnings.length > 0 ? warnings[0] : null);
   };
 
+  // AI Generation Logic (keeping original implementation)
   const generateAd = async (isRefinement = false) => {
     const uploadedImages = images.filter(img => img.file !== null);
     if (uploadedImages.length < 1) {
@@ -300,10 +299,10 @@ export default function App() {
       : "";
 
     try {
-      // Resize images to prevent oversized requests
       const resizeImage = (base64Str: string, quality = 0.7): Promise<string> => {
         return new Promise((resolve) => {
           const img = new Image();
+          img.crossOrigin = "anonymous";
           img.src = base64Str;
           img.onload = () => {
             const canvas = document.createElement('canvas');
@@ -372,7 +371,6 @@ export default function App() {
           ` });
         }
 
-        // Add context memory
         const lastHistory = history[history.length - 1];
         if (lastHistory) {
           parts.push({ text: `CONTEXTO DE DISEÑO PREVIO: El anuncio anterior se generó con este concepto: ${lastHistory.prompt}. Respeta los colores corporativos (Blanco, Negro, Amarillo Sutil) y la tipografía sofisticada.` });
@@ -538,521 +536,141 @@ export default function App() {
     }
   };
 
+  // Render
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#F27D26] rounded-lg flex items-center justify-center text-white font-bold text-xl">
-              H
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">Honne Inmobiliaria</h1>
-              <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold">Ad Creator Pro</p>
-            </div>
-          </div>
-          <button 
-            onClick={generateAd}
-            disabled={isGenerating || images.filter(img => img.file).length === 0}
-            className="bg-[#1A1A1A] text-white px-6 py-2.5 rounded-full font-medium flex items-center gap-2 hover:bg-black transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-black/10"
-          >
-            {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Generar Anuncio
-          </button>
-        </div>
-      </header>
+      <Header 
+        isGenerating={isGenerating}
+        onGenerate={generateAd}
+        imagesCount={images.filter(img => img.file).length}
+      />
 
-      <main className="max-w-7xl mx-auto px-6 py-12 grid grid-cols-1 lg:grid-cols-12 gap-16 items-start">
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
         {/* Left: Configuration Panel */}
-        <div className="lg:col-span-7 space-y-12 pb-24">
-          <header className="space-y-2">
-            <h2 className="text-4xl font-serif italic font-light tracking-tight">Configuración del Anuncio</h2>
-            <p className="text-sm text-gray-400 font-medium uppercase tracking-widest">Personaliza cada detalle de tu campaña</p>
-          </header>
+        <div className="lg:col-span-7 space-y-8 sm:space-y-12 pb-12 sm:pb-24">
+          <motion.header 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-2"
+          >
+            <h2 className="text-3xl sm:text-4xl font-serif italic font-light tracking-tight">
+              Configuración del Anuncio
+            </h2>
+            <p className="text-xs sm:text-sm text-gray-400 font-medium uppercase tracking-widest">
+              Personaliza cada detalle de tu campaña
+            </p>
+          </motion.header>
 
-          {/* Brand & Logo */}
-          <section className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-lg font-bold flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#F27D26]/10 flex items-center justify-center">
-                  <ImageIcon className="w-4 h-4 text-[#F27D26]" />
-                </div>
-                Identidad de Marca
-              </h3>
-            </div>
-            <div className="flex items-center gap-8">
-              <div 
-                onClick={() => logoInputRef.current?.click()}
-                className="w-40 h-40 border-2 border-dashed border-gray-100 rounded-3xl flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-[#F27D26] hover:bg-[#F27D26]/5 transition-all overflow-hidden bg-gray-50 group"
-              >
-                {logo.preview ? (
-                  <img src={logo.preview} alt="Logo" className="w-full h-full object-contain p-4" />
-                ) : (
-                  <>
-                    <Upload className="w-8 h-8 text-gray-300 group-hover:text-[#F27D26] transition-colors" />
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Subir Logo</span>
-                  </>
-                )}
-              </div>
-              <div className="flex-1 space-y-4">
-                <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Colores Corporativos</p>
-                <div className="flex gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-white border border-gray-200 shadow-sm" title="Blanco" />
-                  <div className="w-10 h-10 rounded-2xl bg-black shadow-sm" title="Negro" />
-                  <div className="w-10 h-10 rounded-2xl bg-[#FFD700] shadow-sm border border-black/5" title="Amarillo Sutil" />
-                </div>
-                <p className="text-xs text-gray-400 leading-relaxed italic font-serif">
-                  "La elegancia del negro, la pureza del blanco y el impacto del amarillo."
-                </p>
-              </div>
-            </div>
-          </section>
+          {/* Logo Section */}
+          <LogoUpload 
+            preview={logo.preview}
+            onUpload={triggerLogoUpload}
+          />
 
-          {/* Property Images */}
-          <section className="space-y-6">
-            <div className="flex items-end justify-between">
-              <div className="space-y-1">
-                <h3 className="text-2xl font-serif italic">Galería de la Propiedad</h3>
-                <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">Sube hasta 5 fotografías reales del proyecto</p>
-                <p className="text-[10px] text-[#F27D26] font-bold uppercase tracking-tighter mt-1">
-                  ⚠️ EL AI UTILIZARÁ EXCLUSIVAMENTE ESTAS FOTOS PARA EL ANUNCIO
-                </p>
-              </div>
-              <span className="text-xs font-mono text-[#F27D26] bg-[#F27D26]/10 px-3 py-1 rounded-full font-bold">
-                {images.filter(img => img.file).length} / 5
-              </span>
-            </div>
-            
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {images.map((img) => (
-                <div 
-                  key={img.id}
-                  className="relative group aspect-square bg-white border border-gray-100 rounded-[1.5rem] overflow-hidden transition-all hover:shadow-xl hover:-translate-y-1"
-                >
-                  {img.preview ? (
-                    <>
-                      <img src={img.preview} alt={img.label} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <button 
-                          onClick={() => removeImage(img.id)}
-                          className="p-3 bg-white/10 backdrop-blur-xl rounded-full text-white hover:bg-red-500 transition-colors"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <button 
-                      onClick={() => triggerUpload(img.id)}
-                      className="w-full h-full flex flex-col items-center justify-center gap-4 text-gray-300 hover:text-[#F27D26] transition-colors bg-gray-50/50"
-                    >
-                      <div className="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center group-hover:shadow-md transition-all">
-                        <Camera className="w-7 h-7" />
-                      </div>
-                      <span className="text-[10px] font-bold uppercase tracking-widest">{img.label}</span>
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
+          {/* Property Gallery */}
+          <PropertyGallery 
+            images={images}
+            onUpload={triggerUpload}
+            onRemove={removeImage}
+          />
 
-          {/* Inspiration Section */}
-          <section className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm">
-            <div className="flex items-center justify-between mb-8">
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                    <Sparkles className="w-4 h-4 text-purple-600" />
-                  </div>
-                  Sección de Inspiración
-                </h3>
-                <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">Sube una referencia (ej. Canva) para replicar su estilo</p>
-              </div>
-              <button 
-                onClick={() => triggerUpload('reference')}
-                className="text-xs font-bold text-purple-600 bg-purple-50 px-4 py-2 rounded-full hover:bg-purple-100 transition-all"
-              >
-                + Añadir Referencia
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {referenceImages.map((img) => (
-                <div key={img.id} className="relative group aspect-square bg-gray-50 rounded-2xl overflow-hidden border border-gray-100">
-                  <img src={img.preview!} alt="Referencia" className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
-                  <button 
-                    onClick={() => removeReferenceImage(img.id)}
-                    className="absolute top-2 right-2 p-1.5 bg-white/80 backdrop-blur-md rounded-full text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-              {referenceImages.length === 0 && (
-                <div className="col-span-full py-8 border-2 border-dashed border-gray-100 rounded-2xl flex flex-col items-center justify-center text-gray-300">
-                  <ImageIcon className="w-8 h-8 mb-2" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest">Sin referencias cargadas</span>
-                </div>
-              )}
-            </div>
-          </section>
+          {/* Reference Images */}
+          <ReferenceImages 
+            images={referenceImages}
+            onAdd={() => {
+              setActiveSlot('reference');
+              fileInputRef.current?.click();
+            }}
+            onRemove={removeReferenceImage}
+          />
 
-          {/* Details & Strategic Context */}
-          <section className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm space-y-10">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#F27D26]/10 flex items-center justify-center">
-                  <MapPin className="w-4 h-4 text-[#F27D26]" />
-                </div>
-                Detalles Estratégicos
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-3">
-                <label className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Ubicación Exacta</label>
-                <input 
-                  type="text"
-                  name="location"
-                  value={details.location}
-                  onChange={handleDetailChange}
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-medium border border-transparent focus:bg-white focus:border-[#F27D26] outline-none transition-all shadow-inner"
-                  placeholder="Ej: Valle Hermoso 334"
-                />
-              </div>
-              <div className="space-y-3">
-                <label className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Precio de Venta ($)</label>
-                <input 
-                  type="text"
-                  name="price"
-                  value={details.price}
-                  onChange={handleDetailChange}
-                  className="w-full p-4 bg-[#FFF9E6] text-[#B8860B] rounded-2xl font-black border border-[#F27D26]/10 focus:border-[#F27D26] outline-none transition-all shadow-inner"
-                  placeholder="Ej: 180,000"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-3">
-                <label className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Llamado a la Acción (CTA)</label>
-                <input 
-                  type="text"
-                  name="cta"
-                  value={details.cta}
-                  onChange={handleDetailChange}
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-medium border border-transparent focus:bg-white focus:border-[#F27D26] outline-none transition-all shadow-inner"
-                  placeholder="Ej: ¡Contáctanos hoy!"
-                />
-              </div>
-              <div className="space-y-3">
-                <label className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Teléfono de Contacto</label>
-                <input 
-                  type="text"
-                  name="phone"
-                  value={details.phone}
-                  onChange={handleDetailChange}
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-medium border border-transparent focus:bg-white focus:border-[#F27D26] outline-none transition-all shadow-inner"
-                  placeholder="Ej: 999 882 223"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-6">
-              {[
-                { name: 'beds', label: 'Dorm.', icon: <Bed className="w-4 h-4" /> },
-                { name: 'baths', label: 'Baños', icon: <Bath className="w-4 h-4" /> },
-                { name: 'parking', label: 'Cochera', icon: <Car className="w-4 h-4" /> }
-              ].map((field) => (
-                <div key={field.name} className="space-y-3">
-                  <label className="text-[10px] uppercase tracking-widest font-bold text-gray-400 flex items-center gap-2">
-                    {field.icon} {field.label}
-                  </label>
-                  <input 
-                    type="text"
-                    name={field.name}
-                    value={(details as any)[field.name]}
-                    onChange={handleDetailChange}
-                    className="w-full p-4 bg-gray-50 rounded-2xl text-center font-bold border border-transparent focus:bg-white focus:border-[#F27D26] outline-none transition-all shadow-inner"
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-3">
-                <label className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Propuesta Única (USP)</label>
-                <input 
-                  type="text"
-                  name="usp"
-                  value={details.usp}
-                  onChange={handleDetailChange}
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-medium border border-transparent focus:bg-white focus:border-[#F27D26] outline-none transition-all shadow-inner"
-                  placeholder="Ej: Acabados de Mármol"
-                />
-              </div>
-              <div className="space-y-3">
-                <label className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Factor Urgencia</label>
-                <input 
-                  type="text"
-                  name="urgency"
-                  value={details.urgency}
-                  onChange={handleDetailChange}
-                  className="w-full p-4 bg-gray-50 rounded-2xl font-medium border border-transparent focus:bg-white focus:border-[#F27D26] outline-none transition-all shadow-inner"
-                  placeholder="Ej: Solo por esta semana"
-                />
-              </div>
-            </div>
-          </section>
+          {/* Details Form */}
+          <DetailsForm 
+            details={details}
+            onChange={handleDetailChange}
+            onBuyerProfileChange={handleBuyerProfileChange}
+          />
 
           {/* Custom Instructions */}
-          <section className="bg-white p-10 rounded-[2rem] border border-gray-100 shadow-sm space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#F27D26]/10 flex items-center justify-center">
-                  <MessageSquare className="w-4 h-4 text-[#F27D26]" />
-                </div>
-                Instrucciones Creativas
-              </h3>
-              <button 
-                onClick={() => setCustomInstructions("")}
-                className="text-[10px] font-bold text-gray-300 hover:text-red-400 uppercase tracking-widest transition-colors"
-              >
-                Limpiar
-              </button>
-            </div>
-            <textarea 
-              value={customInstructions}
-              onChange={(e) => setCustomInstructions(e.target.value)}
-              className="w-full p-6 bg-gray-50 rounded-[1.5rem] border border-transparent focus:bg-white focus:border-[#F27D26] outline-none transition-all text-sm min-h-[150px] resize-none font-medium shadow-inner leading-relaxed"
-              placeholder="Ej: Resalta la avenida principal con una línea neón y añade un pin que diga 'A 2 min del Mall'..."
-            />
-          </section>
+          <CustomInstructions 
+            value={customInstructions}
+            onChange={setCustomInstructions}
+            onClear={() => setCustomInstructions('')}
+            selectedStyle={selectedStyle}
+            onStyleChange={setSelectedStyle}
+            strategicSuggestions={STRATEGIC_SUGGESTIONS}
+          />
         </div>
 
         {/* Right: Preview & Actions (Sticky) */}
-        <div className="lg:col-span-5 sticky top-32 space-y-8">
-          <div className="bg-white p-4 rounded-[2.5rem] shadow-2xl border border-gray-100 relative group">
-            <div className="aspect-square rounded-[2rem] overflow-hidden bg-gray-50 relative flex items-center justify-center">
-              <AnimatePresence mode="wait">
-                {isGenerating ? (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex flex-col items-center gap-6 text-center p-12"
-                  >
-                    <div className="relative">
-                      <div className="w-20 h-20 border-4 border-[#F27D26]/10 border-t-[#F27D26] rounded-full animate-spin" />
-                      <Sparkles className="w-8 h-8 text-[#F27D26] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="font-serif italic text-2xl tracking-tight">Esculpiendo tu anuncio...</p>
-                      <p className="text-xs text-gray-400 uppercase tracking-widest font-bold">Calidad HD 1080px</p>
-                    </div>
-                  </motion.div>
-                ) : generatedAd ? (
-                  <div className="relative w-full h-full">
-                    <motion.img 
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      src={generatedAd} 
-                      alt="Anuncio Generado" 
-                      className="w-full h-full object-cover"
-                    />
-                    
-                    {isEditing && (
-                      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px] transition-all">
-                        <canvas
-                          ref={canvasRef}
-                          onMouseDown={startDrawing}
-                          onMouseMove={draw}
-                          onMouseUp={stopDrawing}
-                          onMouseLeave={stopDrawing}
-                          onTouchStart={startDrawing}
-                          onTouchMove={draw}
-                          onTouchEnd={stopDrawing}
-                          className={`w-full h-full cursor-crosshair ${isBrushing ? 'opacity-40' : 'pointer-events-none opacity-0'}`}
-                          style={{ mixBlendMode: 'screen' }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-6 text-center p-12 text-gray-300">
-                    <div className="w-24 h-24 rounded-full bg-white shadow-inner flex items-center justify-center">
-                      <ImageIcon className="w-10 h-10 opacity-20" />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="font-serif italic text-xl">Tu diseño aparecerá aquí</p>
-                      <p className="text-[10px] uppercase tracking-widest font-bold">Completa la configuración y genera</p>
-                    </div>
-                  </div>
-                )}
-              </AnimatePresence>
+        <div className="lg:col-span-5 space-y-6 sm:space-y-8">
+          {/* Preview */}
+          <PreviewPanel
+            isGenerating={isGenerating}
+            generatedAd={generatedAd}
+            error={error}
+            isEditing={isEditing}
+            onEditToggle={() => {
+              setIsEditing(!isEditing);
+              if (!isEditing) setTimeout(initCanvas, 100);
+            }}
+            onDownload={() => {
+              if (generatedAd) {
+                const a = document.createElement('a');
+                a.href = generatedAd;
+                a.download = 'honne-anuncio.png';
+                a.click();
+              }
+            }}
+            canvasRef={canvasRef}
+            isBrushing={isBrushing}
+            onMouseDown={startDrawing}
+            onMouseMove={draw}
+            onMouseUp={stopDrawing}
+            onMouseLeave={stopDrawing}
+            onTouchStart={startDrawing}
+            onTouchMove={draw}
+            onTouchEnd={stopDrawing}
+          />
 
-              {error && (
-                <div className="absolute bottom-6 left-6 right-6 p-4 bg-red-500 text-white text-xs rounded-2xl shadow-xl font-bold flex items-center gap-3">
-                  <AlertCircle className="w-5 h-5 shrink-0" />
-                  {error}
-                </div>
-              )}
-            </div>
-
-            {/* Floating Actions */}
-            {generatedAd && !isGenerating && (
-              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white p-2 rounded-full shadow-2xl border border-gray-100">
-                <button 
-                  onClick={() => {
-                    setIsEditing(!isEditing);
-                    if (!isEditing) setTimeout(initCanvas, 100);
-                  }}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold transition-all ${isEditing ? 'bg-[#F27D26] text-white' : 'hover:bg-gray-50 text-gray-600'}`}
-                >
-                  <Brush className="w-4 h-4" /> {isEditing ? 'Cerrar Edición' : 'Refinar'}
-                </button>
-                <div className="w-px h-6 bg-gray-100" />
-                <a 
-                  href={generatedAd} 
-                  download="honne-anuncio.png"
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold text-[#F27D26] hover:bg-[#F27D26]/5 transition-all"
-                >
-                  <Download className="w-4 h-4" /> Descargar
-                </a>
-              </div>
-            )}
-          </div>
-
-          {/* Refinement Panel (Contextual) */}
-          <AnimatePresence>
-            {isEditing && generatedAd && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-2xl space-y-6"
-              >
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-[#F27D26]/10 flex items-center justify-center">
-                      <Brush className="w-4 h-4 text-[#F27D26]" />
-                    </div>
-                    Refinamiento de Precisión
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => setIsBrushing(!isBrushing)}
-                      className={`p-2.5 rounded-xl transition-all ${isBrushing ? 'bg-[#F27D26] text-white shadow-lg shadow-[#F27D26]/20' : 'bg-gray-50 text-gray-400 hover:text-black'}`}
-                      title="Pincel de Inpainting"
-                    >
-                      <Brush className="w-4 h-4" />
-                    </button>
-                    {isBrushing && (
-                      <button 
-                        onClick={clearCanvas}
-                        className="p-2.5 bg-gray-50 text-gray-400 hover:text-red-500 rounded-xl transition-all"
-                      >
-                        <Eraser className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {isBrushing && (
-                  <div className="space-y-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
-                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                      <span>Grosor del Pincel</span>
-                      <span>{brushSize}px</span>
-                    </div>
-                    <input 
-                      type="range" 
-                      min="10" 
-                      max="150" 
-                      value={brushSize} 
-                      onChange={(e) => {
-                        setBrushSize(parseInt(e.target.value));
-                        if (contextRef.current) contextRef.current.lineWidth = parseInt(e.target.value);
-                      }}
-                      className="w-full accent-[#F27D26]"
-                    />
-                    <p className="text-[9px] text-gray-400 font-medium italic">Pinta sobre el elemento que deseas cambiar (ej. un texto, una ventana, el cielo).</p>
-                  </div>
-                )}
-
-                <textarea 
-                  value={refinementText}
-                  onChange={(e) => {
-                    setRefinementText(e.target.value);
-                    checkQuality(e.target.value);
-                  }}
-                  placeholder={isBrushing ? "Describe qué quieres cambiar en el área pintada..." : "Ej: Cambia el cielo a atardecer, pon el precio en blanco..."}
-                  className="w-full p-5 bg-gray-50 rounded-2xl text-sm border border-transparent focus:bg-white focus:border-[#F27D26] outline-none min-h-[120px] resize-none shadow-inner leading-relaxed"
-                />
-
-                <div className="flex gap-4">
-                  <button 
-                    onClick={() => generateAd(true)}
-                    disabled={!refinementText || isGenerating}
-                    className="flex-1 bg-black text-white py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-[#1A1A1A] transition-all disabled:opacity-50 shadow-xl shadow-black/10"
-                  >
-                    {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5 text-[#F27D26]" />}
-                    Aplicar Cambios
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* History Section */}
-          {history.length > 1 && (
-            <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold flex items-center gap-2">
-                <History className="w-4 h-4 text-gray-400" />
-                Historial de Versiones
-              </h3>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                {history.map((item, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={() => setGeneratedAd(item.image)}
-                    className={`relative shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${generatedAd === item.image ? 'border-[#F27D26] scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                  >
-                    <img src={item.image} alt={`Versión ${idx}`} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Refinement Panel */}
+          <RefinementPanel
+            isVisible={isEditing && !!generatedAd}
+            isBrushing={isBrushing}
+            brushSize={brushSize}
+            refinementText={refinementText}
+            isGenerating={isGenerating}
+            qualityWarning={qualityWarning}
+            onBrushToggle={() => setIsBrushing(!isBrushing)}
+            onClearCanvas={clearCanvas}
+            onBrushSizeChange={setBrushSize}
+            onTextChange={(text) => {
+              setRefinementText(text);
+              checkQuality(text);
+            }}
+            onApply={() => generateAd(true)}
+            canvasRef={canvasRef}
+            contextRef={contextRef}
+          />
 
           {/* Strategic Insight */}
-          <div className="bg-[#1A1A1A] p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#F27D26]/10 rounded-full -mr-16 -mt-16 blur-3xl" />
-            <div className="relative z-10 space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#F27D26] flex items-center justify-center shadow-lg shadow-[#F27D26]/20">
-                  <Sparkles className="w-5 h-5 text-white" />
-                </div>
-                <p className="text-[10px] uppercase tracking-widest font-bold text-[#F27D26]">Insight Estratégico</p>
-              </div>
-              <p className="font-serif italic text-lg leading-relaxed text-gray-200">
-                "{STRATEGIC_SUGGESTIONS[selectedStyle]}"
-              </p>
-              <div className="pt-4 border-t border-white/10">
-                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Recomendación para Meta Ads</p>
-              </div>
-            </div>
-          </div>
+          <StrategicInsight 
+            selectedStyle={selectedStyle}
+            suggestion={STRATEGIC_SUGGESTIONS[selectedStyle]}
+          />
         </div>
       </main>
 
+      {/* File Inputs */}
       <input 
         type="file" 
         ref={fileInputRef} 
         onChange={handleFileChange} 
         accept="image/*" 
         className="hidden" 
+        aria-label="Cargar imagen"
       />
 
       <input 
@@ -1061,12 +679,14 @@ export default function App() {
         onChange={handleLogoChange} 
         accept="image/*" 
         className="hidden" 
+        aria-label="Cargar logo"
       />
 
-      <footer className="max-w-6xl mx-auto px-6 py-12 border-t border-gray-100 flex flex-col md:flex-row justify-between items-center gap-6">
+      {/* Footer */}
+      <footer className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-6 text-center sm:text-left">
         <div className="flex items-center gap-2 opacity-30 grayscale">
           <div className="w-6 h-6 bg-black rounded flex items-center justify-center text-white font-bold text-[10px]">H</div>
-          <span className="text-sm font-bold tracking-tighter">HONNE INMOBILIARIA</span>
+          <span className="text-xs sm:text-sm font-bold tracking-tighter">HONNE INMOBILIARIA</span>
         </div>
         <p className="text-xs text-gray-400 font-mono">© 2026 HONNE INMOBILIARIA. POWERED BY GEMINI 3.1 FLASH IMAGE.</p>
       </footer>
