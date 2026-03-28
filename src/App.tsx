@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { motion } from 'framer-motion';
+import { validateImageFile, validateBase64Image } from './lib/imageValidator';
 import {
   Header,
   PropertyGallery,
@@ -89,10 +90,32 @@ export default function App() {
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validar el logo
+      const validation = validateImageFile(file);
+      if (!validation.valid) {
+        setError(validation.error || "Logo inválido");
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
-        setLogo({ file, preview: reader.result as string });
+        const result = reader.result as string;
+        
+        // Validar el base64
+        const base64Validation = validateBase64Image(result);
+        if (!base64Validation.valid) {
+          setError(base64Validation.error || "No se pudo procesar el logo");
+          return;
+        }
+        
+        setLogo({ file, preview: result });
+        setError(null);
       };
+      
+      reader.onerror = () => {
+        setError("Error al leer el logo. Intenta de nuevo.");
+      };
+      
       reader.readAsDataURL(file);
     }
   };
@@ -100,24 +123,49 @@ export default function App() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && activeSlot) {
+      // Validar el archivo antes de procesarlo
+      const validation = validateImageFile(file);
+      if (!validation.valid) {
+        setError(validation.error || "Archivo inválido");
+        setActiveSlot(null);
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
+        const result = reader.result as string;
+        
+        // Validar el base64 resultado
+        const base64Validation = validateBase64Image(result);
+        if (!base64Validation.valid) {
+          setError(base64Validation.error || "No se pudo procesar la imagen");
+          setActiveSlot(null);
+          return;
+        }
+
         if (activeSlot === 'reference') {
           const newRef: PropertyImage = {
             id: `ref-${Date.now()}`,
             label: 'Inspiración',
             file,
-            preview: reader.result as string
+            preview: result
           };
           setReferenceImages(prev => [...prev, newRef]);
+          setError(null);
         } else {
           setImages(prev => prev.map(img => 
             img.id === activeSlot 
-              ? { ...img, file, preview: reader.result as string } 
+              ? { ...img, file, preview: result } 
               : img
           ));
+          setError(null);
         }
       };
+      
+      reader.onerror = () => {
+        setError("Error al leer el archivo. Intenta de nuevo.");
+      };
+      
       reader.readAsDataURL(file);
     }
     setActiveSlot(null);
@@ -300,33 +348,66 @@ export default function App() {
 
     try {
       const resizeImage = (base64Str: string, quality = 0.7): Promise<string> => {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           const img = new Image();
           img.crossOrigin = "anonymous";
           img.src = base64Str;
+          
+          // Timeout de 10 segundos
+          const timeout = setTimeout(() => {
+            reject(new Error("Tiempo de carga de imagen agotado"));
+          }, 10000);
+          
           img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 1024;
-            const MAX_HEIGHT = 1024;
-            let width = img.width;
-            let height = img.height;
+            clearTimeout(timeout);
+            try {
+              const canvas = document.createElement('canvas');
+              const MAX_WIDTH = 1024;
+              const MAX_HEIGHT = 1024;
+              let width = img.width;
+              let height = img.height;
 
-            if (width > height) {
-              if (width > MAX_WIDTH) {
-                height *= MAX_WIDTH / width;
-                width = MAX_WIDTH;
+              // Validar que las dimensiones sean razonables
+              if (width <= 0 || height <= 0) {
+                throw new Error("Las dimensiones de la imagen no son válidas");
               }
-            } else {
-              if (height > MAX_HEIGHT) {
-                width *= MAX_HEIGHT / height;
-                height = MAX_HEIGHT;
+
+              if (width > height) {
+                if (width > MAX_WIDTH) {
+                  height *= MAX_WIDTH / width;
+                  width = MAX_WIDTH;
+                }
+              } else {
+                if (height > MAX_HEIGHT) {
+                  width *= MAX_HEIGHT / height;
+                  height = MAX_HEIGHT;
+                }
               }
+              
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                throw new Error("No se pudo obtener contexto del canvas");
+              }
+              
+              ctx.drawImage(img, 0, 0, width, height);
+              const result = canvas.toDataURL('image/jpeg', quality);
+              
+              // Validar que el resultado sea válido
+              if (!result || result.length < 100) {
+                throw new Error("La imagen comprimida es demasiado pequeña");
+              }
+              
+              resolve(result.split(',')[1]);
+            } catch (error) {
+              reject(error);
             }
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx?.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+          };
+          
+          img.onerror = () => {
+            clearTimeout(timeout);
+            reject(new Error("No se pudo cargar la imagen. Verifica que sea válida"));
           };
         });
       };
@@ -376,32 +457,53 @@ export default function App() {
           parts.push({ text: `CONTEXTO DE DISEÑO PREVIO: El anuncio anterior se generó con este concepto: ${lastHistory.prompt}. Respeta los colores corporativos (Blanco, Negro, Amarillo Sutil) y la tipografía sofisticada.` });
         }
       } else {
-        const propertyParts = await Promise.all(uploadedImages.map(async (img) => {
-          const resizedData = await resizeImage(img.preview!);
-          return {
-            inlineData: {
-              data: resizedData,
-              mimeType: "image/jpeg"
-            }
-          };
-        }));
+        // Validar que haya imágenes cargadas
+        const uploadedImages = images.filter(img => img.file && img.preview);
+        
+        if (uploadedImages.length === 0) {
+          throw new Error("Debes cargar al menos una imagen de la propiedad para generar el anuncio");
+        }
 
-        const referenceParts = await Promise.all(referenceImages.map(async (img) => {
-          const resizedData = await resizeImage(img.preview!);
-          return {
-            inlineData: {
-              data: resizedData,
-              mimeType: "image/jpeg"
-            }
-          };
-        }));
+        
+        let propertyParts: any[] = [];
+        let referenceParts: any[] = [];
+        let logoPart: any[] = [];
 
-        const logoPart = logo.preview ? [{
-          inlineData: {
-            data: await resizeImage(logo.preview, 0.9),
-            mimeType: "image/jpeg"
+        try {
+          propertyParts = await Promise.all(uploadedImages.map(async (img) => {
+            if (!img.preview) throw new Error("Preview de imagen no disponible");
+            const resizedData = await resizeImage(img.preview);
+            return {
+              inlineData: {
+                data: resizedData,
+                mimeType: "image/jpeg"
+              }
+            };
+          }));
+
+          referenceParts = (await Promise.all(referenceImages.map(async (img) => {
+            if (!img.preview) return null;
+            const resizedData = await resizeImage(img.preview);
+            return {
+              inlineData: {
+                data: resizedData,
+                mimeType: "image/jpeg"
+              }
+            };
+          }))).filter((p): p is any => p !== null);
+
+          if (logo.preview) {
+            const logoData = await resizeImage(logo.preview, 0.9);
+            logoPart = [{
+              inlineData: {
+                data: logoData,
+                mimeType: "image/jpeg"
+              }
+            }];
           }
-        }] : [];
+        } catch (imgError: any) {
+          throw new Error(`Error al procesar imágenes: ${imgError.message}`);
+        }
 
         const stylePrompts = {
           collage: `
@@ -525,11 +627,25 @@ export default function App() {
         throw new Error("No se pudo generar la imagen. Inténtalo de nuevo.");
       }
     } catch (err: any) {
-      console.error(err);
-      if (err.message?.includes("Requested entity was not found")) {
-        setError("Error de configuración del modelo. Inténtalo de nuevo en unos momentos.");
+      console.error("[v0] Error de generación:", err);
+      
+      const errorMessage = err.message || err.toString();
+      
+      // Mensajes específicos según el error
+      if (errorMessage.includes("Debes cargar")) {
+        setError(errorMessage);
+      } else if (errorMessage.includes("No se pudo cargar")) {
+        setError("Una o más imágenes no se pudieron cargar. Intenta con otros formatos (JPG, PNG).");
+      } else if (errorMessage.includes("Tiempo de carga")) {
+        setError("La imagen tardó demasiado en cargar. Intenta con archivos más pequeños.");
+      } else if (errorMessage.includes("Error al procesar")) {
+        setError(`${errorMessage} Por favor, verifica que tus imágenes sean válidas.`);
+      } else if (errorMessage.includes("Requested entity was not found")) {
+        setError("Error de configuración del modelo. Por favor intenta en unos momentos.");
+      } else if (errorMessage.includes("No se pudo generar")) {
+        setError(errorMessage);
       } else {
-        setError("Error al generar el anuncio. Asegúrate de que las imágenes sean válidas y no demasiado pesadas.");
+        setError("Error al generar el anuncio. Verifica las imágenes y try de nuevo.");
       }
     } finally {
       setIsGenerating(false);
